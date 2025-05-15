@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     'FraudDetection',
     'ReverseTransactions',
     'StandardsEnhacements',
-    'UseCaseScenario',
+    'UseCaseScenario'
 ]
 
 MIDDLEWARE = [
