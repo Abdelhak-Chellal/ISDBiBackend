@@ -23,5 +23,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('reverse/', include('ReverseTransactions.urls')),
     path('standards/', include('StandardsEnhacements.urls')),
-    path('scenario/', include('UseCaseScenario.urls'))
+    path('scenario/', include('UseCaseScenario.urls')),
+    path("product-design/", include("ProductDesign.urls"))
 ]

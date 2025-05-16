@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import StandardsEnhacementsPromptView
+from .views import StandardsEnhancementPromptView
 
 urlpatterns = [
-    path('prompt/', StandardsEnhacementsPromptView.as_view(), name='standards-prompt'),
+    path('prompt/', StandardsEnhancementPromptView.as_view(), name='standards-prompt'),
 ]
