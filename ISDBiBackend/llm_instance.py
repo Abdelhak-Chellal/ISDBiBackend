@@ -5,6 +5,7 @@ import os
 from utils.model import load_all_documents, RAGModel
 import asyncio
 from langchain_together import ChatTogether
+import re 
 
 
 fas_files = [
@@ -161,15 +162,16 @@ def product_design_llm(question):
     # Step 3: Call LLaMA 3.3-70B for synthesis
     os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
     model = ChatTogether(
-        model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+        model="deepseek-ai/deepseek-llm-67b-base"
     )
     response = model.invoke(prompt)
     print(response)
     return response.content
 
 
-class multiAgents : 
-    def __init__ (self , db , reviewer_query , proposer_query ,validator_query  , number_validators=3  , number_proposers = 3 , number_reviews=3   ): 
+class multiAgents:
+    def __init__(self, db, reviewer_query, proposer_query, validator_query,
+                 number_validators=3, number_proposers=3, number_reviews=3):
         self.number_validators = number_validators
         self.number_proposers = number_proposers
         self.number_reviews = number_reviews
@@ -177,60 +179,142 @@ class multiAgents :
         self.reviewer = [RAGModel(db) for _ in range(number_reviews)]
         self.proposer = [RAGModel(db) for _ in range(number_proposers)]
         self.validator = [RAGModel(db) for _ in range(number_validators)]
-        for _ in range(number_reviews):
-            self.reviewer[_].RetrievalQA(reviewer_query)
-        for _ in range(number_proposers):
-            self.proposer[_].RetrievalQA(proposer_query)
-        for _ in range(number_validators):  
-            self.validator[_].RetrievalQA(validator_query)
-    def invoke (self , query  ) :
-        review = ""
-        proposal = ""
-        validator = ""
-        for _ in range (self.number_reviews) : 
-            review += self.reviewer[_].invoke(query )
-        for _ in range (self.number_proposers) : 
-            proposal  += self.proposer[_].invoke(review )
-        for _ in range (self.number_validators) : 
-            validator  += self.validator[_].invoke(proposal )
-        return review , proposal , validator
-    
-def standard_enhancement_llm(question):
-     query = ""
-     review = ""
-     proposal = ""
-     reviewer = f"""
-        You are a ReviewerAgent. Extract key Islamic finance compliance points from this text based on the FAS standards:
-        Text:
-        {query}
 
-        Output:
-        - List the most relevant compliance-relevant features or concerns.
-    """
-     proposer = f"""
-        You are a ProposalAgent. Based on the extracted compliance points, propose a solution or recommendation:
-        Text:
-        {review}
+        for i in range(number_reviews):
+            self.reviewer[i].RetrievalQA(reviewer_query)
+        for i in range(number_proposers):
+            self.proposer[i].RetrievalQA(proposer_query)
+        for i in range(number_validators):
+            self.validator[i].RetrievalQA(validator_query)
 
-        Output:
-        - List the proposed solutions or recommendations.
-    """
-     validator = f"""
-        You are a ValidationAgent. Validate the proposed solutions and provide a consensus score:
-        Text:   
-        {proposal}
-        Output:
-        - Provide a verdict (Approved/Rejected) based on the consensus score. give reasons for the verdict.
-        - List the consensus score.
-    """
-     os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+    async def _parallel_invoke(self, agents, query):
+        loop = asyncio.get_event_loop()
+        return await asyncio.gather(*[
+            loop.run_in_executor(None, agent.invoke, query) for agent in agents
+        ])
+    def extract_scores(outputs):
+        scores = []
+        for text in outputs:
+            # Extract consensus score using regex
+            match = re.search(r"Consensus Score\s*[:\-]?\s*([0-9]*\.?[0-9]+)", text)
+            if match:
+                score = float(match.group(1))
+                scores.append(score)
+        return scores
+
+    def decide_final_verdict(avg_score, threshold=0.75):
+        if avg_score >= threshold:
+            return "Approved"
+        else:
+            return "Rejected"
+        
+    def invoke(self, query):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Step 1: Reviewers
+        review_results = loop.run_until_complete(self._parallel_invoke(self.reviewer, query))
+        combined_review = "\n---\n".join(review_results)
+
+        # Step 2: Proposers (input is the combined review)
+        proposal_results = loop.run_until_complete(self._parallel_invoke(self.proposer, combined_review))
+        combined_proposal = "\n---\n".join(proposal_results)
+
+        # Step 3: Validators (input is the combined proposal)
+        validator_results = loop.run_until_complete(self._parallel_invoke(self.validator, combined_proposal))
+        combined_validator = "\n---\n".join(validator_results)
+
+        # Score extraction & verdict aggregation
+        scores = self.extract_scores(validator_results)
+        avg_score = sum(scores) / len(scores) if scores else 0
+        final_verdict = self.decide_final_verdict(avg_score)
+
+        loop.close()
+
+        return {
+        "review": combined_review,
+        "proposal": combined_proposal,
+        "validator_raw": combined_validator,
+        "validator_scores": scores,
+        "validator_average": round(avg_score, 3),
+        "final_verdict": final_verdict
+    }
     
-     pipeline = multiAgents(db, reviewer , proposer , validator  , number_validators=1 , number_proposers=1 , number_reviews=1)
-     
-     review , proposal , validator = pipeline.invoke(query)
-     print("Review:", review)
-     print("Proposal:", proposal)    
-     print("Validator:", validator)
-     return review , proposal , validator
+
+def standard_enhancement_llm(template):
+    review = ""
+    proposal = ""
+    reviewer = f"""
+You are an Islamic Finance Reviewer Agent specializing in AAOIFI Financial Accounting Standards (FAS).
+Analyze the following text and extract key Shariah compliance issues or relevant features based on FAS standards.
+
+<text>
+{template}
+</text>
+
+Output Format (Use [REVIEW]...[/REVIEW] tags for each point):
+[REVIEW]
+- Presence of interest-based terms violates FAS X, which prohibits riba.
+[/REVIEW]
+[REVIEW]
+- Lack of clear ownership structure may conflict with FAS Y related to asset-backed securities.
+[/REVIEW]
+"""
+
+    proposer = f"""
+You are a Proposal Agent with expertise in Islamic finance. Based on the extracted [REVIEW] points, propose clear Shariah-compliant solutions or recommendations in line with AAOIFI FAS.
+
+<text>
+{template}
+</text>
+
+Output Format (Use [PROPOSAL]...[/PROPOSAL] tags for each proposal):
+[PROPOSAL]
+- Replace interest-based financing with a mudarabah contract structure.
+[/PROPOSAL]
+[PROPOSAL]
+- Introduce detailed asset disclosure to meet FAS Z transparency requirements.
+[/PROPOSAL]
+"""
+
+
+    validator = f"""
+You are a Validation Agent in an Islamic finance multi-agent system. Assess the proposed [PROPOSAL] recommendations for Shariah compliance using AAOIFI FAS.
+
+<text>
+{template}
+</text>
+
+Instructions:
+- For each [PROPOSAL], give a verdict (Approved/Rejected) and specific reasoning tied to FAS guidelines.
+- Assign a consensus score between 0 and 1 (e.g., 0.75 = moderately compliant).
+
+Output Format (Use [VALIDATION]...[/VALIDATION]):
+[VALIDATION]
+Verdict: Approved  
+Reason: Mudarabah contracts are compliant under FAS X and avoid riba.  
+Consensus Score: 0.92
+[/VALIDATION]
+[VALIDATION]
+Verdict: Rejected  
+Reason: Disclosure plan lacks asset classification detail required by FAS Y.  
+Consensus Score: 0.45
+[/VALIDATION]
+"""
+
+
+    os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+
+    pipeline = multiAgents(db, reviewer, proposer, validator,
+                           number_validators=3, number_proposers=3, number_reviews=3)
+
+    result = pipeline.invoke(template)
+    print("🔍 Review:\n", result["review"])
+    print("\n💡 Proposal:\n", result["proposal"])
+    print("\n🛡️ Validator Raw Output:\n", result["validator_raw"])
+    print("\n📊 Validator Scores:", result["validator_scores"])
+    print("📈 Average Score:", result["validator_average"])
+    print("✅ Final Verdict:", result["final_verdict"])
+    return result
 
     

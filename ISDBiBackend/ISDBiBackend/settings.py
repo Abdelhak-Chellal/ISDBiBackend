@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'StandardsEnhacements',
     'corsheaders',
     'UseCaseScenario',
-    'ProductDesign'
+    'ProductDesign',
+    "chat"
 ]
 
 MIDDLEWARE = [
