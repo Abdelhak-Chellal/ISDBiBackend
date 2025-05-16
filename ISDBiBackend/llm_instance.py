@@ -3,6 +3,9 @@
 
 import os
 from utils.model import load_all_documents, RAGModel
+import asyncio
+from langchain_together import ChatTogether
+
 
 fas_files = [
     "FI5F55_1_Musharaka Financing(4).PDF",
@@ -111,3 +114,123 @@ def reverse_tx_llm():
     llm.specific_embeddings(fas_files)
     llm.RetrievalQA(REVERSE_TX_TEMPLATE_2)
     return llm 
+
+
+
+# Async wrapper for LLM calls
+async def async_llm_invoke(llm, question):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, llm.invoke, question)
+
+
+def product_design_llm(question):
+    # Step 1: Run both use_case and reverse_tx in parallel
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    use_case_llm_instance = use_case_llm()
+    reverse_tx_llm_instance = reverse_tx_llm()
+    results = loop.run_until_complete(asyncio.gather(
+        async_llm_invoke(use_case_llm_instance, question),
+        async_llm_invoke(reverse_tx_llm_instance, question),
+    ))
+    loop.close()
+
+    use_case_answer, reverse_tx_answer = results
+
+    # Step 2: Combine the responses into a single prompt
+    prompt = f"""
+    You are a Financial Product Report Generator. Given the outputs of two agents — one analyzing the transaction structure and accounting flow (UseCaseAgent), one assessing edge cases (ReverseAgent) produce a unified, clear, and concise report. The report should include:
+
+    1. Recommended product structure and contract type  
+    2. Applicable AAOIFI FAS and SS standards  
+    3. Profit calculation and recognition method  
+    4. Quarter-by-quarter journal entries  
+    5. Summary ledger in tabular format  
+    6. Risk scenario analysis (e.g., default, impairment) with journal entries and weighted FAS application  
+    8. Justifications for each decision and enhancement
+
+    --- UseCaseAgent Output ---
+    {use_case_answer}
+
+    --- ReverseAgent Output ---
+    {reverse_tx_answer}
+
+    (Assume the EnhancementAgent expands the relevant AAOIFI standards with improvements where needed.)
+    """
+
+    # Step 3: Call LLaMA 3.3-70B for synthesis
+    os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+    model = ChatTogether(
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+    )
+    response = model.invoke(prompt)
+    print(response)
+    return response.content
+
+
+class multiAgents : 
+    def __init__ (self , db , reviewer_query , proposer_query ,validator_query  , number_validators=3  , number_proposers = 3 , number_reviews=3   ): 
+        self.number_validators = number_validators
+        self.number_proposers = number_proposers
+        self.number_reviews = number_reviews
+        self.db = db
+        self.reviewer = [RAGModel(db) for _ in range(number_reviews)]
+        self.proposer = [RAGModel(db) for _ in range(number_proposers)]
+        self.validator = [RAGModel(db) for _ in range(number_validators)]
+        for _ in range(number_reviews):
+            self.reviewer[_].RetrievalQA(reviewer_query)
+        for _ in range(number_proposers):
+            self.proposer[_].RetrievalQA(proposer_query)
+        for _ in range(number_validators):  
+            self.validator[_].RetrievalQA(validator_query)
+    def invoke (self , query  ) :
+        review = ""
+        proposal = ""
+        validator = ""
+        for _ in range (self.number_reviews) : 
+            review += self.reviewer[_].invoke(query )
+        for _ in range (self.number_proposers) : 
+            proposal  += self.proposer[_].invoke(review )
+        for _ in range (self.number_validators) : 
+            validator  += self.validator[_].invoke(proposal )
+        return review , proposal , validator
+    
+def standard_enhancement_llm(question):
+     query = ""
+     review = ""
+     proposal = ""
+     reviewer = f"""
+        You are a ReviewerAgent. Extract key Islamic finance compliance points from this text based on the FAS standards:
+        Text:
+        {query}
+
+        Output:
+        - List the most relevant compliance-relevant features or concerns.
+    """
+     proposer = f"""
+        You are a ProposalAgent. Based on the extracted compliance points, propose a solution or recommendation:
+        Text:
+        {review}
+
+        Output:
+        - List the proposed solutions or recommendations.
+    """
+     validator = f"""
+        You are a ValidationAgent. Validate the proposed solutions and provide a consensus score:
+        Text:   
+        {proposal}
+        Output:
+        - Provide a verdict (Approved/Rejected) based on the consensus score. give reasons for the verdict.
+        - List the consensus score.
+    """
+     os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+    
+     pipeline = multiAgents(db, reviewer , proposer , validator  , number_validators=1 , number_proposers=1 , number_reviews=1)
+     
+     review , proposal , validator = pipeline.invoke(query)
+     print("Review:", review)
+     print("Proposal:", proposal)    
+     print("Validator:", validator)
+     return review , proposal , validator
+
+    
