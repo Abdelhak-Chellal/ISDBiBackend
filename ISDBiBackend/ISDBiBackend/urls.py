@@ -21,10 +21,7 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('auditing/', include('Auditing.urls')),
-    path('fraud/', include('FraudDetection.urls')), 
     path('reverse/', include('ReverseTransactions.urls')),
     path('standards/', include('StandardsEnhacements.urls')),
-    path('scenario/', include('UseCaseScenario.urls')),
-    # Add more as needed
+    path('scenario/', include('UseCaseScenario.urls'))
 ]

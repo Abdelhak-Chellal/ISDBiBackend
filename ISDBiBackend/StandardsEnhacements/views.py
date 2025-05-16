@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from ISDBiBackend.utils.model import LLMHandler
+from utils.model import RAGModel
 
 class StandardsEnhacementsPromptView(APIView):
     def post(self, request):
@@ -9,7 +9,7 @@ class StandardsEnhacementsPromptView(APIView):
         if not question:
             return Response({"error": "Missing 'question'"}, status=status.HTTP_400_BAD_REQUEST)
 
-        llm = LLMHandler()
+        llm = RAGModel()
         answer = llm.answer(question, topic="standards_enhancements")
 
         return Response({"answer": answer}, status=status.HTTP_200_OK)

@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from ISDBiBackend.utils.model import LLMHandler
+from llm_instance import reverse_tx_llm 
 
 class ReverseTransactionsPromptView(APIView):
     def post(self, request):
@@ -9,7 +9,6 @@ class ReverseTransactionsPromptView(APIView):
         if not question:
             return Response({"error": "Missing 'question'"}, status=status.HTTP_400_BAD_REQUEST)
 
-        llm = LLMHandler()
-        answer = llm.answer(question, topic="reverse_transactions")
-
+        llm = reverse_tx_llm()
+        answer = llm.invoke(question) 
         return Response({"answer": answer}, status=status.HTTP_200_OK)
