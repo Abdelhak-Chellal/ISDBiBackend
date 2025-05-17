@@ -9,14 +9,15 @@ import re
 
 from prompt_templates import USE_CASE_TEMPLATE, REVERSE_TX_TEMPLATE, REVERSE_TX_TEMPLATE_2
 from prompt_templates import AUDIT_TEMPLATE, FRAUD_DETECTION_TEMPLATE
-from prompt_templates import files, fas_files, external_files
-
+from prompt_templates import files, fas_files, external_files, all_files
+from dotenv import load_dotenv
+load_dotenv()
 
 
 print("🔄 Loading shared embedding database...")
 
 # Load shared Chroma DB from disk
-db = load_all_documents(external_files) 
+db = load_all_documents(all_files) 
 
 print("-------------------------------------")
 
@@ -65,22 +66,31 @@ async def async_llm_invoke(llm, question):
 
 
 def product_design_llm(question):
-    # Step 1: Run both use_case and reverse_tx in parallel
+    # Step 1: Run use_case, reverse_tx, and fraud_detect in parallel
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
     use_case_llm_instance = use_case_llm()
     reverse_tx_llm_instance = reverse_tx_llm()
+    fraud_detect_instance = fraud_detect_llm()
+
     results = loop.run_until_complete(asyncio.gather(
         async_llm_invoke(use_case_llm_instance, question),
         async_llm_invoke(reverse_tx_llm_instance, question),
+        async_llm_invoke(fraud_detect_instance, question),
     ))
     loop.close()
 
-    use_case_answer, reverse_tx_answer = results
+    use_case_answer, reverse_tx_answer, fraud_detect_answer = results
 
     # Step 2: Combine the responses into a single prompt
     prompt = f"""
-    You are a Financial Product Report Generator. Given the outputs of two agents — one analyzing the transaction structure and accounting flow (UseCaseAgent), one assessing edge cases (ReverseAgent) produce a unified, clear, and concise report. The report should include:
+    You are a Financial Product Report Generator. Given the outputs of three agents:
+    - UseCaseAgent (analyzes transaction structure and accounting flow),
+    - ReverseAgent (assesses edge cases and reverse flows),
+    - FraudAgent (detects potential fraud and compliance breaches),
+
+    Generate a unified, clear, and comprehensive report. The report must include:
 
     1. Recommended product structure and contract type  
     2. Applicable AAOIFI FAS and SS standards  
@@ -88,7 +98,8 @@ def product_design_llm(question):
     4. Quarter-by-quarter journal entries  
     5. Summary ledger in tabular format  
     6. Risk scenario analysis (e.g., default, impairment) with journal entries and weighted FAS application  
-    8. Justifications for each decision and enhancement
+    7. Fraud detection findings: describe any suspicious structures or compliance risks and suggest mitigation  
+    8. Justifications for each decision and enhancement, with references to AAOIFI and fraud rules
 
     --- UseCaseAgent Output ---
     {use_case_answer}
@@ -96,11 +107,13 @@ def product_design_llm(question):
     --- ReverseAgent Output ---
     {reverse_tx_answer}
 
-    (Assume the EnhancementAgent expands the relevant AAOIFI standards with improvements where needed.)
+    --- FraudAgent Output ---
+    {fraud_detect_answer}
+
     """
 
     # Step 3: Call LLaMA 3.3-70B for synthesis
-    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
+    os.environ["TOGETHER_API_KEY"] = os.getenv("LLM_API_KEY")
     model = ChatTogether(
         model="meta-llama/Llama-3.3-70B-Instruct-Turbo"
     )
@@ -252,7 +265,7 @@ Output Format (Use [VALIDATION]...[/VALIDATION] tags):
 
 
 
-    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
+    os.environ["TOGETHER_API_KEY"] = os.getenv("LLM_API_KEY")
 
     pipeline = multiAgents(db, reviewer, proposer, validator,
                         number_validators=3, number_proposers=3, number_reviews=1)
@@ -265,7 +278,7 @@ def summarizer(list_responses):
     if isinstance(list_responses, list):
         list_responses = "\n---\n".join(list_responses)
 
-    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
+    os.environ["TOGETHER_API_KEY"] = os.getenv("LLM_API_KEY")
     model = ChatTogether(
         model="meta-llama/Llama-3.3-70B-Instruct-Turbo"
     )
