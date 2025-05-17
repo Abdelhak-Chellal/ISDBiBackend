@@ -42,7 +42,10 @@ INSTALLED_APPS = [
     'corsheaders',
     'UseCaseScenario',
     'ProductDesign',
-    "chat"
+    "chat",
+    "Auditing",
+    "FraudDetection"
+
 ]
 
 MIDDLEWARE = [
