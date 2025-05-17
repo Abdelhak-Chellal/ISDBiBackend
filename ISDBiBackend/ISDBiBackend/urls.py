@@ -26,5 +26,7 @@ urlpatterns = [
     path('scenario/', include('UseCaseScenario.urls')),
     path("product-design/", include("ProductDesign.urls")),
     path('chat/', include('chat.urls')),
+    path('fraud-detection/', include('FraudDetection.urls')),
+    path('auditing/', include('Auditing.urls')),
 
 ]

@@ -7,31 +7,16 @@ import asyncio
 from langchain_together import ChatTogether
 import re 
 
+from prompt_templates import USE_CASE_TEMPLATE, REVERSE_TX_TEMPLATE, REVERSE_TX_TEMPLATE_2
+from prompt_templates import AUDIT_TEMPLATE, FRAUD_DETECTION_TEMPLATE
+from prompt_templates import files, fas_files, external_files
 
-fas_files = [
-    "FI5F55_1_Musharaka Financing(4).PDF",
-    "FI28ED_1_Salam and Parallel Salam (07).PDF",
-    "FI922A_1_Murabaha and Other Deferred Payment Sales (28).PDF",
-    "FINANC_1_Istisnaa and Parallel Istisnaa (10).PDF",
-    "Ijarah (32).pdf"
-]
 
-files = [
-    "../Data/FI5F55_1_Musharaka Financing(4).PDF",
-    "../Data/FI28ED_1_Salam and Parallel Salam (07).PDF",
-    "../Data/FI922A_1_Murabaha and Other Deferred Payment Sales (28).PDF",
-    "../Data/FINANC_1_Istisnaa and Parallel Istisnaa (10).PDF",
-    "../Data/Ijarah (32).pdf",
-]
-files_ss = [    "../Data/SS - shariah-standards-2015-321-390 (1) 1.pdf",
-    "../Data/SS8 - Murabahah - revised standard.pdf",
-    "../Data/SS9 - Ijarah and Ijarah Muntahia Bittamleek - revised standard.pdf",
-    "../Data/SS10 - Salam and Parallel Salam - revised standard.pdf"]
 
 print("🔄 Loading shared embedding database...")
 
 # Load shared Chroma DB from disk
-db = load_all_documents(files) 
+db = load_all_documents(external_files) 
 
 print("-------------------------------------")
 
@@ -42,65 +27,6 @@ print("done Loading shared embedding database")
 if not os.path.exists("../chroma_store"):
     raise RuntimeError("❌ Chroma DB not found! Run the embedding step first.")
 
-
-
-
-
-# Prompt templates
-USE_CASE_TEMPLATE = (
-    "Given the following Islamic finance transaction: {question}. "
-    "Identify the applicable AAOIFI Financial Accounting Standard(s). "
-    "Calculate the bank's profit using the appropriate method. "
-    "Provide detailed accounting entries at each phase of the transaction (e.g., each quarter), "
-    "applying the percentage-of-completion method where appropriate. "
-    "Finally, summarize the ledger over the contract duration using a visual table format showing each quarter’s percentage of completion, "
-    "revenue recognized, cost incurred, and profit recognized."
-)
-
-
-REVERSE_TX_TEMPLATE = (
-    "The following financial event occurred: {question}. "
-    "Identify the applicable AAOIFI FAS standard(s). If more than one standard may apply, assign a weighted likelihood "
-    "(e.g., in percentage or score) to each, based on relevance. Justify your reasoning for each choice. Then, provide the correct "
-    "accounting treatment in the form of journal entries."
-)
-
-REVERSE_TX_TEMPLATE_2 = (
-    "Example:\n"
-    "Context: GreenTech exits in Year 3, and Al Baraka Bank buys out its stake.\n"
-    "Adjustments:\n"
-    "- Buyout Price: $1,750,000\n"
-    "- Bank Ownership: 100%\n"
-    "- Accounting Treatment:\n"
-    "  - Derecognition of GreenTech’s equity\n"
-    "  - Recognition of acquisition expense\n"
-    "- Journal Entry for Buyout:\n"
-    "  Dr. Investment in GreenTech       1,750,000\n"
-    "      Cr. Cash                      1,750,000\n"
-    "(To record acquisition of GreenTech’s equity)\n"
-    "\n"
-    "Applicable Standards:\n"
-    "1. FAS 4 – 70% – Applies because the transaction affects presentation of equity in financial statements.\n"
-    "2. FAS 20 – 30% – May apply if the investment was accounted for using the equity method.\n"
-    "3. FAS 32 – 0% – Not relevant; applies only to Ijarah (leasing) transactions.\n"
-    "\n"
-    "Explanation:\n"
-    "- FAS 4 is the most relevant due to its coverage of equity transactions and financial statement presentation.\n"
-    "- FAS 20 may be considered based on the nature of GreenTech's relationship to the bank (e.g., associate).\n"
-    "- FAS 32 is commonly confused but not applicable here as this is not a lease.\n"
-    "\n"
-    "---\n"
-    "\n"
-    "Now, perform the same analysis for the following:\n"
-    "\n"
-    "The following financial event occurred: {question}\n"
-    "Based on AAOIFI Financial Accounting Standards (FAS), identify all potentially applicable standards from FAS 4, FAS 32, FAS 7, FAS 10, and FAS 28.\n\n"
-    "For each applicable standard, provide a relevance score or percentage (based on how directly it applies).\n\n"
-    "Rank the standards from most to least relevant.\n\n"
-    "Justify your selection for each standard in 1–2 sentences.\n\n"
-    "Then, provide the correct accounting treatment by showing the journal entries, with clear account names and explanations.\n\n"
-    "If any standards are commonly confused or misapplied (e.g., FAS 32 used instead of FAS 4), explain why they are not relevant."
-)
 
 
 # Answering functions
@@ -114,6 +40,20 @@ def reverse_tx_llm():
     llm = RAGModel(db)
     llm.specific_embeddings(fas_files)
     llm.RetrievalQA(REVERSE_TX_TEMPLATE_2)
+    return llm 
+
+
+def fraud_detect_llm():
+    llm = RAGModel(db)
+    llm.specific_embeddings(external_files)
+    llm.RetrievalQA(FRAUD_DETECTION_TEMPLATE)
+    return llm 
+
+
+def auditing_llm():
+    llm = RAGModel(db)
+    llm.specific_embeddings(external_files)
+    llm.RetrievalQA(AUDIT_TEMPLATE)
     return llm 
 
 
@@ -160,9 +100,9 @@ def product_design_llm(question):
     """
 
     # Step 3: Call LLaMA 3.3-70B for synthesis
-    os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
     model = ChatTogether(
-        model="deepseek-ai/deepseek-llm-67b-base"
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo"
     )
     response = model.invoke(prompt)
     print(response)
@@ -171,7 +111,7 @@ def product_design_llm(question):
 
 class multiAgents:
     def __init__(self, db, reviewer_query, proposer_query, validator_query,
-                 number_validators=3, number_proposers=3, number_reviews=3):
+                number_validators=3, number_proposers=3, number_reviews=3):
         self.number_validators = number_validators
         self.number_proposers = number_proposers
         self.number_reviews = number_reviews
@@ -192,22 +132,9 @@ class multiAgents:
         return await asyncio.gather(*[
             loop.run_in_executor(None, agent.invoke, query) for agent in agents
         ])
-    def extract_scores(outputs):
-        scores = []
-        for text in outputs:
-            # Extract consensus score using regex
-            match = re.search(r"Consensus Score\s*[:\-]?\s*([0-9]*\.?[0-9]+)", text)
-            if match:
-                score = float(match.group(1))
-                scores.append(score)
-        return scores
 
-    def decide_final_verdict(avg_score, threshold=0.75):
-        if avg_score >= threshold:
-            return "Approved"
-        else:
-            return "Rejected"
-        
+    
+            
     def invoke(self, query):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -215,106 +142,150 @@ class multiAgents:
         # Step 1: Reviewers
         review_results = loop.run_until_complete(self._parallel_invoke(self.reviewer, query))
         combined_review = "\n---\n".join(review_results)
+        try:
+            summarized_review = summarizer(combined_review)
+        except Exception as e:
+            summarized_review = f"Summarization failed at review stage: {str(e)}"
 
-        # Step 2: Proposers (input is the combined review)
-        proposal_results = loop.run_until_complete(self._parallel_invoke(self.proposer, combined_review))
+        # Step 2: Proposers (input is the summarized review)
+        proposal_results = loop.run_until_complete(self._parallel_invoke(self.proposer, summarized_review))
         combined_proposal = "\n---\n".join(proposal_results)
+        try:
+            summarized_proposal = summarizer(combined_proposal)
+        except Exception as e:
+            summarized_proposal = f"Summarization failed at proposal stage: {str(e)}"
 
-        # Step 3: Validators (input is the combined proposal)
-        validator_results = loop.run_until_complete(self._parallel_invoke(self.validator, combined_proposal))
+        # Step 3: Validators (input is the summarized proposal)
+        validator_results = loop.run_until_complete(self._parallel_invoke(self.validator, summarized_proposal))
         combined_validator = "\n---\n".join(validator_results)
-
-        # Score extraction & verdict aggregation
-        scores = self.extract_scores(validator_results)
-        avg_score = sum(scores) / len(scores) if scores else 0
-        final_verdict = self.decide_final_verdict(avg_score)
-
+        try:
+            summarized_validator = summarizer(combined_validator)
+        except Exception as e:
+            summarized_validator = f"Summarization failed at validator stage: {str(e)}"
+        
         loop.close()
 
         return {
-        "review": combined_review,
-        "proposal": combined_proposal,
-        "validator_raw": combined_validator,
-        "validator_scores": scores,
-        "validator_average": round(avg_score, 3),
-        "final_verdict": final_verdict
-    }
-    
+            "raw": {
+                "review": combined_review,
+                "proposal": combined_proposal,
+                "validator": combined_validator,
+            },
+            "summaries": {
+                "review": summarized_review,
+                "proposal": summarized_proposal,
+                "validator": summarized_validator,
+            },
+        }
+
 
 def standard_enhancement_llm(template):
     review = ""
     proposal = ""
     reviewer = f"""
-You are an Islamic Finance Reviewer Agent specializing in AAOIFI Financial Accounting Standards (FAS).
-Analyze the following text and extract key Shariah compliance issues or relevant features based on FAS standards.
+    You are a Review Agent in an Islamic finance and AAOIFI FAS (Financial Accounting Standards) multi-agent system.
+    you will read batch of news reports and identify elements that relate directly to Shariah compliance or that may require updates or clarifications in the standards
 
-<text>
-{template}
-</text>
 
-Output Format (Use [REVIEW]...[/REVIEW] tags for each point):
-[REVIEW]
-- Presence of interest-based terms violates FAS X, which prohibits riba.
-[/REVIEW]
-[REVIEW]
-- Lack of clear ownership structure may conflict with FAS Y related to asset-backed securities.
-[/REVIEW]
-"""
+    <text>
+    {{template}}
+    </text>
+    Instructions:
+        Extract clear, individual points that could trigger concern or updates in the standard.,
+        Relate your findings to specific FAS principles (e.g., riba, gharar, transparency).,
+        Use the tag format for structured output.
+
+   
+    - Presence of interest-based terms violates FAS X, which prohibits riba.
+    
+    - Lack of clear ownership structure may conflict with FAS Y related to asset-backed securities.
+    
+    """
 
     proposer = f"""
-You are a Proposal Agent with expertise in Islamic finance. Based on the extracted [REVIEW] points, propose clear Shariah-compliant solutions or recommendations in line with AAOIFI FAS.
+    You are a Proposal Agent with expertise in Shariah-compliant finance and Islamic standard developement. Given the reviewer observations and the current AAOIFI standard clause, propose enhancements or clarifications to the standard mentioned as follows : 
 
-<text>
-{template}
-</text>
+    <text>
+    {{template}}
+    </text>
+    Instructions:
 
-Output Format (Use [PROPOSAL]...[/PROPOSAL] tags for each proposal):
-[PROPOSAL]
-- Replace interest-based financing with a mudarabah contract structure.
-[/PROPOSAL]
-[PROPOSAL]
-- Introduce detailed asset disclosure to meet FAS Z transparency requirements.
-[/PROPOSAL]
-"""
+        Propose modifications that clarify, update, or extend the standard.,
+        Ensure proposals are justified by the reviewer points and maintain Shariah integrity.
+   ]
+    - Replace interest-based financing with a mudarabah contract structure.
+    
+    - Introduce detailed asset disclosure to meet FAS Z transparency requirements.
+    
+    """
 
 
     validator = f"""
-You are a Validation Agent in an Islamic finance multi-agent system. Assess the proposed [PROPOSAL] recommendations for Shariah compliance using AAOIFI FAS.
+You are a Validation Agent in an Islamic finance multi-agent system. Assess the proposed recommendations for Shariah compliance using AAOIFI FAS mentioned in the following proposal:
 
 <text>
-{template}
+{{template}}
 </text>
 
 Instructions:
-- For each [PROPOSAL], give a verdict (Approved/Rejected) and specific reasoning tied to FAS guidelines.
-- Assign a consensus score between 0 and 1 (e.g., 0.75 = moderately compliant).
 
-Output Format (Use [VALIDATION]...[/VALIDATION]):
+For each proposal, provide:
+
+- **Verdict** (Approved/Rejected),
+- **Justification** referencing Shariah concepts or FAS clauses,
+- A **Consensus Score** between 0 (non-compliant) and 1 (fully compliant)
+
+Output Format (Use [VALIDATION]...[/VALIDATION] tags):
+
 [VALIDATION]
-Verdict: Approved  
-Reason: Mudarabah contracts are compliant under FAS X and avoid riba.  
-Consensus Score: 0.92
+**🟢 Verdict:** Approved  
+**Reason:** Mudarabah contracts are compliant under FAS X and avoid riba.  
+**Consensus Score:** 0.92
 [/VALIDATION]
+
 [VALIDATION]
-Verdict: Rejected  
-Reason: Disclosure plan lacks asset classification detail required by FAS Y.  
-Consensus Score: 0.45
+**🔴 Verdict:** Rejected  
+**Reason:** Disclosure plan lacks asset classification detail required by FAS Y.  
+**Consensus Score:** 0.45
 [/VALIDATION]
 """
 
 
-    os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+
+    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
 
     pipeline = multiAgents(db, reviewer, proposer, validator,
-                           number_validators=3, number_proposers=3, number_reviews=3)
+                        number_validators=3, number_proposers=3, number_reviews=1)
 
     result = pipeline.invoke(template)
-    print("🔍 Review:\n", result["review"])
-    print("\n💡 Proposal:\n", result["proposal"])
-    print("\n🛡️ Validator Raw Output:\n", result["validator_raw"])
-    print("\n📊 Validator Scores:", result["validator_scores"])
-    print("📈 Average Score:", result["validator_average"])
-    print("✅ Final Verdict:", result["final_verdict"])
     return result
 
-    
+
+def summarizer(list_responses):
+    if isinstance(list_responses, list):
+        list_responses = "\n---\n".join(list_responses)
+
+    os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
+    model = ChatTogether(
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    )
+
+    prompt = f"""
+    You are an intelligent summarization agent.
+
+    Your task is to read multiple responses and produce a *coherent, concise, and informative summary*. Your summary should:
+    - Highlight the key points from all responses
+    - Avoid repetition
+    - Use clear and professional language
+    - Group related ideas together when possible
+
+    Below are the responses:
+
+    --- RESPONSES ---
+    {list_responses}
+
+    --- SUMMARY ---
+    """
+
+    response = model.invoke(prompt)
+    return response.content

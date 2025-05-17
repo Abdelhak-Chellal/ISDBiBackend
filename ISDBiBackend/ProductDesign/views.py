@@ -13,7 +13,6 @@ class ProductDesignPromptView(APIView):
 
         if not chat_id or not question:
             return Response({"error": "Missing 'chat_id' or 'question'"}, status=status.HTTP_400_BAD_REQUEST)
-
         
 
         answer = product_design_llm(question)

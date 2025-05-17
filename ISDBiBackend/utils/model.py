@@ -68,7 +68,7 @@ class RAGModel :
         return retriever
 
     def RetrievalQA (self , query ) : 
-        os.environ["TOGETHER_API_KEY"] = "018548f37134ff50a4244bec41ae87fa4b7ede1695be79f422aa7fb13f77e414"
+        os.environ["TOGETHER_API_KEY"] = "dfcd8c728ca6b1f456ee4ffc06ea3cec55434b09d6b0fbfbccc51caec5d6c1fb"
         model = ChatTogether(
             model=self.model_name
         )
@@ -79,9 +79,10 @@ class RAGModel :
             qa_chain = RetrievalQA.from_chain_type(llm=model, retriever=self.retriever)
         self.chain = qa_chain
         self.template = PromptTemplate.from_template(template=query)
+        
     def invoke (self , query ) : 
         prompt_formatted_str: str = self.template.format(
-            question=query)
+            template=query)
         response = self.chain.invoke(prompt_formatted_str)
         return response.get("result", response)
 
@@ -91,20 +92,4 @@ class RAGModel :
     
         
 
-if __name__ == '__main__' : 
-    
-    db = load_all_documents(["./books/blue_sisters.pdf" , "./books/normal_people.pdf"])
-    model = RAGModel(db)
-    template = "you are a book chatbot. Answer the question based on the books you have read. {question}"
-    model.RetrievalQA(template)
-    query = "is Connell a good friend?"
-    print ("correct embedding , general one ")
-    response = model.invoke(query)
-    print (response )
-    model.specific_embeddings(["blue_sisters.pdf"])
-    model.RetrievalQA(template)
-    query = "is Connel a good friend ? "
-    print ("specific embeddings , wrong ones ")
-    response = model.invoke(query)
-    print(response)
 
